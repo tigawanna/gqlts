@@ -1,5 +1,11 @@
 {
+  "name": "demo-apps-next-ui-test",
+  "version": "3.4.0",
+  "private": true,
+  "scripts": {
+    "test": "bun puppeteer-test.js"
+  },
   "dependencies": {
-    "puppeteer": "^24.42.0"
+    "puppeteer": "^25.1.0"
   }
 }

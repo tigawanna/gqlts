@@ -1,13 +1,15 @@
-import { generate } from '@gqlts/cli';
-import { buildSchema } from 'graphql';
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { generate } from '@gqlts/cli';
+import { buildSchema } from 'graphql';
+
+function stripNexusHeader(schemaString: string) {
+  return schemaString.replace(/^(?:###.*\r?\n)+\r?\n?/, '');
+}
+
 export async function buildSdk({ skipIfExists = false }: { skipIfExists?: boolean } = {}) {
-  let schemaString = readFileSync(join(__dirname, '../src/schema.graphql')).toString();
-  // remove first 4 lines
-  schemaString = schemaString.split('\n').slice(4).join('\n');
+  const schemaString = stripNexusHeader(readFileSync(join(__dirname, '../src/schema.graphql')).toString());
   let schemaStringDist = '';
   try {
     schemaStringDist = readFileSync(join(__dirname, './dist/schema.graphql')).toString();
@@ -17,12 +19,6 @@ export async function buildSdk({ skipIfExists = false }: { skipIfExists?: boolea
     console.log('Skipping SDK build, as it already exists.');
     return;
   }
-  // if no node_modules, run yarn
-  if (!existsSync(join(__dirname, 'node_modules/ts-node'))) {
-    console.log('No node_modules found, running yarn...');
-    await execSync('yarn');
-  }
-
   console.log('Building SDK...');
 
   const schema = buildSchema(schemaString);
@@ -79,5 +75,6 @@ if (args.includes('--build')) {
     .then()
     .catch((e) => {
       console.error(`Build SDK failed: ${e}`);
+      process.exitCode = 1;
     });
 }

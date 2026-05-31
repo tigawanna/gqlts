@@ -12,12 +12,16 @@
 
 [![CI](https://github.com/meabed/gqlts/actions/workflows/ci.yml/badge.svg)](https://github.com/meabed/gqlts/actions/workflows/ci.yml)
 [![RELEASE](https://github.com/meabed/gqlts/actions/workflows/release.yml/badge.svg)](https://github.com/meabed/gqlts/actions/workflows/release.yml)
+
 ### @gqlts/cli
+
 [![Latest NPM version](https://img.shields.io/npm/v/@gqlts/cli/latest.svg?label=latest)](https://www.npmjs.com/package/@gqlts/cli)
 [![Beta NPM version](https://img.shields.io/npm/v/@gqlts/cli/beta.svg?label=beta)](https://www.npmjs.com/package/@gqlts/cli)
 [![Downloads](https://img.shields.io/npm/dm/@gqlts/cli.svg)](https://www.npmjs.com/package/@gqlts/cli)
 [![UNPKG](https://img.shields.io/badge/UNPKG-CLI%20Files-179BD7.svg)](https://unpkg.com/browse/@gqlts/cli@latest/)
+
 ### @gqlts/runtime
+
 [![Latest NPM version](https://img.shields.io/npm/v/@gqlts/runtime/latest.svg?label=latest)](https://www.npmjs.com/package/@gqlts/runtime)
 [![Beta NPM version](https://img.shields.io/npm/v/@gqlts/runtime/beta.svg?label=beta)](https://www.npmjs.com/package/@gqlts/runtime)
 [![Downloads](https://img.shields.io/npm/dm/@gqlts/runtime.svg)](https://www.npmjs.com/package/@gqlts/runtime)
@@ -52,28 +56,30 @@ Read the [quick start guide](https://gqlts.vercel.app/docs) to generate a client
 First generate your client executing
 
 ```sh
-npm i -D @gqlts/cli # cli to generate the client code
-npm i @gqlts/runtime graphql # runtime dependencies
-gqlts --schema ./schema.graphql --output ./generated
+npm install -D @gqlts/cli # cli to generate the client code
+npm install @gqlts/runtime graphql # runtime dependencies
+npx gqlts --schema ./schema.graphql --output ./generated
 ```
+
+Use the equivalent commands for your package manager: `pnpm dlx gqlts`, `yarn gqlts`, or `bunx gqlts` all work too.
 
 Then you can use your client as follows
 
 ```js
-import { createClient, everything } from './generated'
-const client = createClient()
+import { createClient, everything } from './generated';
+const client = createClient();
 
 client
-    .query({
-        countries: {
-            name: true,
-            code: true,
-            nestedField: {
-                ...everything, // same as __scalar: true
-            },
-        },
-    })
-    .then(console.log)
+  .query({
+    countries: {
+      name: true,
+      code: true,
+      nestedField: {
+        ...everything, // same as __scalar: true
+      },
+    },
+  })
+  .then(console.log);
 ```
 
 The code above will fetch the graphql query below
@@ -109,19 +115,19 @@ Generated clients normally contain:
 
 ## Development
 
-Install from the repo root with Yarn classic:
+Install from the repo root with Bun:
 
 ```sh
-yarn install --frozen-lockfile
+bun ci
 ```
 
 Common commands:
 
 ```sh
-yarn buildall
-yarn test
-yarn tscall
-yarn --cwd website build
+bun run buildall
+bun run test
+bun run typecheck
+bun run --cwd website build
 ./demo-apps/build-and-test.sh
 ```
 
@@ -131,29 +137,29 @@ More details are in [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ## Releases
 
-Gqlts uses Changesets for coordinated releases of `@gqlts/cli` and `@gqlts/runtime`.
+Gqlts uses `semantic-release` for coordinated releases of `@gqlts/runtime` and `@gqlts/cli`.
 
 - `develop` publishes prereleases like `x.y.z-beta.n` to npm `beta`.
-- `master` publishes stable releases like `x.y.z` to npm `latest`.
-- both published packages are intentionally version-locked and release together.
+- `master` and `main` publish stable releases like `x.y.z` to npm `latest`.
+- one semantic-release run computes the version for the whole repo.
+- `release:stamp` writes that exact version into the root, runtime, and CLI manifests.
+- `release:publish` publishes `@gqlts/runtime` first, then `@gqlts/cli`, both at the same version.
 
 Useful commands:
 
 ```sh
-yarn changeset
-yarn release:version:beta
-yarn release:version:stable
-yarn release:publish
-yarn release:verify
+bun run release:verify
+bun run release:dry
+bun run release:local 3.5.0-beta.1 --dry-run --tag beta
 ```
 
 Normal flow:
 
-1. Add a changeset in the same PR as runtime or CLI changes.
-2. Merge to `develop` to open or update the beta release PR.
-3. Merge to `master` to open or update the stable release PR.
+1. Use conventional commits. `feat`, `fix`, `perf`, `refactor`, and `revert` create releases; `docs`, `test`, `ci`, `build`, `style`, and `chore` do not.
+2. Merge to `develop` to publish the next beta.
+3. Merge to `master` or `main` to publish the next stable release.
 
-If a publish partially fails, use the `Release Recovery` GitHub Actions workflow to rerun publish for a specific ref, repair `beta` or `latest` dist-tags, and optionally remove the legacy `develop` dist-tag.
+The release workflow validates first, then lets semantic-release stamp, build, tag, create the GitHub release, and publish both npm packages from the same computed version.
 
 ---
 

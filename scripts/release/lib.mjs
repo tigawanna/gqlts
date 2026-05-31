@@ -1,5 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -11,35 +11,69 @@ export const packageDirs = ['runtime', 'cli'];
 
 export function run(command, args, options = {}) {
   execFileSync(command, args, {
-    cwd: repoRoot,
+    cwd: options.cwd ?? repoRoot,
     stdio: 'inherit',
     env: process.env,
     ...options,
   });
 }
 
-export function capture(command, args, options = {}) {
-  return execFileSync(command, args, {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
-    ...options,
-  }).trim();
-}
-
 export function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-export function readPreState() {
-  const preStatePath = path.join(repoRoot, '.changeset', 'pre.json');
+export function writeJson(filePath, value) {
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
 
-  if (!existsSync(preStatePath)) {
-    return null;
+export function logStep(message) {
+  console.log(`\n==> ${message}`);
+}
+
+export function validateVersion(version) {
+  if (!version || !/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
+    throw new Error(`Invalid semver version: ${version ?? ''}`);
   }
 
-  return readJson(preStatePath);
+  return version;
+}
+
+export function isTruthy(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').toLowerCase());
+}
+
+export function getReleaseChannel(version = '') {
+  const explicitChannel = process.env.NPM_DIST_TAG || process.env.RELEASE_CHANNEL;
+
+  if (explicitChannel) {
+    return explicitChannel;
+  }
+
+  const prereleaseMatch = version.match(/-([a-z0-9]+)/i);
+  if (prereleaseMatch) {
+    return prereleaseMatch[1];
+  }
+
+  const branchName = process.env.GITHUB_REF_NAME || process.env.CI_REF_NAME || process.env.BRANCH || '';
+  return branchName === 'develop' ? 'beta' : 'latest';
+}
+
+export function getPackageInfo(packageDir) {
+  const dir = path.join(repoRoot, packageDir);
+  const packageJsonPath = path.join(dir, 'package.json');
+  const packageJson = readJson(packageJsonPath);
+
+  return {
+    dir,
+    packageJson,
+    packageJsonPath,
+    name: packageJson.name,
+    version: packageJson.version,
+  };
+}
+
+export function getPackageInfos() {
+  return packageDirs.map(getPackageInfo);
 }
 
 export function syncPackageDocs() {
@@ -55,109 +89,71 @@ export function syncPackageDocs() {
   }
 }
 
-export function getPackageInfo(packageDir) {
-  const packageJsonPath = path.join(repoRoot, packageDir, 'package.json');
-  const packageJson = readJson(packageJsonPath);
+function updateInternalDependencyVersions(packageJson, versionByPackageName) {
+  const dependencySections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 
-  return {
-    dir: path.join(repoRoot, packageDir),
-    name: packageJson.name,
-    version: packageJson.version,
-  };
-}
+  for (const dependencySection of dependencySections) {
+    const dependencies = packageJson[dependencySection];
+    if (!dependencies) {
+      continue;
+    }
 
-export function isTruthy(value) {
-  return ['1', 'true', 'yes', 'on'].includes(String(value ?? '').toLowerCase());
-}
+    for (const [packageName, version] of versionByPackageName) {
+      const currentRange = dependencies[packageName];
+      if (!currentRange) {
+        continue;
+      }
 
-export function logStep(message) {
-  console.log(`\n==> ${message}`);
-}
-
-export function validateReleaseChannel(channel) {
-  if (!channel || /\s/.test(channel)) {
-    throw new Error(`Invalid release channel: ${channel}`);
-  }
-
-  return channel;
-}
-
-export function getReleaseChannel() {
-  const explicitChannel = process.env.RELEASE_CHANNEL;
-
-  if (explicitChannel) {
-    return validateReleaseChannel(explicitChannel);
-  }
-
-  const branchName =
-    process.env.GITHUB_REF_NAME ||
-    process.env.CI_REF_NAME ||
-    process.env.BRANCH ||
-    '';
-
-  return branchName === 'develop' ? 'beta' : 'latest';
-}
-
-export function isVersionPublished(packageName, version) {
-  const result = spawnSync('npm', ['view', `${packageName}@${version}`, 'version', '--json'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
-  });
-
-  if (result.status !== 0) {
-    return false;
-  }
-
-  const output = result.stdout.trim();
-
-  if (!output) {
-    return false;
-  }
-
-  try {
-    const parsed = JSON.parse(output);
-
-    return parsed === version || (Array.isArray(parsed) && parsed.includes(version));
-  } catch {
-    return output.replaceAll('"', '') === version;
+      const prefix = currentRange.startsWith('^') || currentRange.startsWith('~') ? currentRange[0] : '';
+      dependencies[packageName] = `${prefix}${version}`;
+    }
   }
 }
 
-export function publishPackage(packageInfo, channel) {
+export function stampPackageVersions(version) {
+  validateVersion(version);
+
+  const rootPackageJsonPath = path.join(repoRoot, 'package.json');
+  const rootPackageJson = readJson(rootPackageJsonPath);
+  rootPackageJson.version = version;
+  writeJson(rootPackageJsonPath, rootPackageJson);
+  console.log(`stamped ${rootPackageJson.name}@${version}`);
+
+  const versionByPackageName = new Map(getPackageInfos().map((packageInfo) => [packageInfo.name, version]));
+
+  for (const packageDir of packageDirs) {
+    const { packageJson, packageJsonPath } = getPackageInfo(packageDir);
+    packageJson.version = version;
+    updateInternalDependencyVersions(packageJson, versionByPackageName);
+    writeJson(packageJsonPath, packageJson);
+    console.log(`stamped ${packageJson.name}@${version}`);
+  }
+}
+
+export function getFixedPackageVersion(packageInfos = getPackageInfos()) {
+  const versions = new Set(packageInfos.map((packageInfo) => packageInfo.version));
+
+  if (versions.size !== 1) {
+    throw new Error(
+      `Refusing mismatched package versions: ${packageInfos
+        .map((packageInfo) => `${packageInfo.name}@${packageInfo.version}`)
+        .join(', ')}`,
+    );
+  }
+
+  return versions.values().next().value;
+}
+
+export function publishPackage(packageInfo, channel, options = {}) {
   const args = ['publish', '--access', 'public'];
 
   if (channel) {
     args.push('--tag', channel);
   }
 
+  if (options.dryRun) {
+    args.push('--dry-run');
+  }
+
   run('npm', args, { cwd: packageInfo.dir });
-}
-
-export function addDistTag(packageInfo, channel) {
-  run('npm', ['dist-tag', 'add', `${packageInfo.name}@${packageInfo.version}`, channel]);
-}
-
-export function removeDistTag(packageInfo, channel) {
-  const result = spawnSync('npm', ['dist-tag', 'rm', packageInfo.name, channel], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: process.env,
-  });
-
-  if (result.status === 0) {
-    process.stdout.write(result.stdout);
-    process.stderr.write(result.stderr);
-    return;
-  }
-
-  const stderr = result.stderr.trim();
-  if (stderr.includes('is not a dist-tag')) {
-    console.log(`No ${channel} dist-tag found for ${packageInfo.name}, skipping.`);
-    return;
-  }
-
-  throw new Error(stderr || `Failed to remove ${channel} dist-tag from ${packageInfo.name}`);
 }
