@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-### Minor Changes
+## 3.4.2
 
+### Patch Changes
+- Fix type exports
 - Generate SDK-owned public declaration interfaces for runtime, Axios, WebSocket, and operation types so downstream packages can export inferred generated clients without TS2883 errors from nested dependency paths.
 
 ## 3.4.1-beta.0

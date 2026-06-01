@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 3.4.2
 
+### Patch Changes
 - No runtime code changes. This package will be released with `@gqlts/cli` so package versions stay aligned.
 
 ## 3.4.1-beta.0
